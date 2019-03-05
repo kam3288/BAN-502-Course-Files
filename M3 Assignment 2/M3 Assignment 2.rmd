@@ -1,0 +1,298 @@
+---
+output: word_document
+editor_options: 
+  chunk_output_type: console
+---
+#Module 3: Assignment 2 -- Classification with Logistic Regression
+##Kellie McLiverty
+
+###Assignment Needs & Data Importation  
+
+Libraries needed for Assignemnt  
+```{r}
+library(tidyverse)
+library(MASS)
+library(caret)
+library(ROCR)
+library(leaps)
+library(e1071) 
+
+parole <- read_csv("parole.csv")
+```
+
+
+###Converting data to factors
+```{r}
+#converting data into male or female
+parole = parole %>% mutate(male = as_factor(as.character(male))) %>%
+mutate(male = fct_recode(male,
+"Female" = "0",
+"Male" = "1"
+))
+
+#converting race into White or otherwise
+parole = parole %>% mutate(race = as_factor(as.character(race))) %>%
+mutate(race = fct_recode(race,
+"White" = "1",
+"Otherwise" = "2"
+))
+
+#converting states
+parole = parole %>% mutate(state = as_factor(as.character(state))) %>%
+mutate(state = fct_recode(state,
+"Any Other State" = "1",
+"Kentucky" = "2",
+"Louisiana" = "3",
+"Virginia" = "4"
+))
+
+#converting Crimes
+parole = parole %>% mutate(crime = as_factor(as.character(crime))) %>%
+mutate(crime = fct_recode(crime,
+"Any Other Crime" = "1",
+"Larceny" = "2",
+"Drug-related crime" = "3",
+"Driving-related crime" = "4"
+))
+
+#converting Multiple Offenses
+parole = parole %>% mutate(multiple.offenses = as_factor(as.character(multiple.offenses))) %>%
+mutate(multiple.offenses = fct_recode(multiple.offenses,
+"Otherwise" = "0",
+"Incarcerated for multiple offenses" = "1"
+))
+
+#converting parole
+parole = parole %>% mutate(violator = as_factor(as.character(violator))) %>%
+mutate(violator = fct_recode(violator,
+"Completed the parole without violation" = "0",
+"Violated the parole" = "1"
+))
+```
+
+For this assignment, we'll start by splitting the data into training and testing, using a random number seed of 1234.  
+
+```{r}
+set.seed(12345) #sets random number seed for cross validation
+train.rows = createDataPartition(y = parole$violator, p=0.7, list= FALSE)
+train = parole[train.rows,]
+test = parole[-train.rows,]
+```
+
+Visuals to see relationships in data
+```{r}
+#Looking at the relationship of parole violators to sex
+ggplot(parole, aes(x=male, fill = violator)) + geom_bar() +theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+#table view
+tb = table(parole$violator, parole$male) #creates table object
+prop.table(tb, margin = 2) #crosstab with proportions
+```
+
+
+Looking at the tabluar data, there is not a significant difference in the percentage between males and females violating parole simply based on sex.  
+
+
+```{r}
+#Looking at the relationship of parole violators to multiple offenses
+ggplot(parole, aes(x=multiple.offenses, fill = violator)) + geom_bar() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+#table view
+tb1 = table(parole$violator, parole$multiple.offenses) #creates table object
+prop.table(tb1, margin = 2) #crosstab with proportions
+```
+
+The number of offenses a parolee has does appear to have an impact on their liklihood to violate parole. Those incarcerated for multiple offenses are more likely to violate parole, and may be the most significant indicator of parole violation.
+
+```{r}
+#Looking at the relationship of parole violators to type of crime 
+ggplot(parole, aes(x=crime, fill = violator)) + geom_bar() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+#table view
+tb2 = table(parole$violator, parole$crime) #creates table object
+prop.table(tb2, margin = 2) #crosstab with proportions
+```
+
+
+Looking at this data, the type of crime does seems to have a slight impact on the number of people who violate parole, but possibly not as much as the number of offenses. 
+
+
+```{r}
+#Looking at the relationship of parole violators to race 
+ggplot(parole, aes(x=race, fill = violator)) + geom_bar() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+#table view
+tb3 = table(parole$violator, parole$race) #creates table object
+prop.table(tb3, margin = 2) #crosstab with proportions
+```
+
+
+Though it appears that the number of parolees that violated their parole is about equal between whites and other races, this could be a significant of predictor of parole violation but maybe not as significant as other factors.
+
+```{r}
+#Looking at the relationship of parole violators to state 
+ggplot(parole, aes(x=state, fill = violator)) + geom_bar() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+#table view
+tb4 = table(parole$violator, parole$state) #creates table object
+prop.table(tb4, margin = 2) #crosstab with proportions
+```
+
+
+Looking at this data alone, I would say the state could be a significant predictor if a person will violate their parole. It is interesting to note that Lousiana had a higher rate a parole violation than the other states, this may be an indication of significance to me.
+
+
+Next, we'll build a model with offenses. 
+```{r}
+mod1 = glm(violator ~ multiple.offenses, parole, family = "binomial")
+summary(mod1)
+```
+
+
+From this regression model, we can see that multiple offenses is a highly significant predictor of parole violation. This model has a low AIC value of 479.81 and significant p value for otherwise & multiple incarcerations. 
+
+With this in mind, we'll create the best fitting model to predict "violator".
+```{r}
+allmod = glm(violator ~., parole, family = "binomial") #creates the full model
+summary(allmod)  
+  
+emptymod = glm(violator~1, parole, family = "binomial")  #creates the empty model
+summary(emptymod)
+
+#backward stepwise
+backmod = stepAIC(allmod, direction = "backward", trace = TRUE) 
+summary(backmod)
+
+#forward stepwise
+forwardmod = stepAIC(emptymod, direction = "forward", scope=list(upper=allmod,lower=emptymod), trace = TRUE) 
+summary(forwardmod) 
+```
+
+
+Looking at the coefficents and AIC values [AIC=365.26] of both of these models, it shows that both models are the same, so I will choose to use the Forward stepwise from here. It also confirms and earlier assumption that State and Race (otherwise) are also significant predictors of parole violation. 
+
+This model of training data shows that the state in which a parolee is in, if they are a multiple offender, and if they are a race other than white all have a significant impact on their likelihood of violating parole. However, when looking at the significance of the model regarding state, it is important to note that only the state of Kentucky has no significant impact on a parolee's likelihood to violate parole. 
+
+Based on the graphs from above these seem like intuitive predictors for parole violations, so we can predict a non-white parolee from Lousiana who has multiple offenses is more likely to violate parole than their counterpart in Virginia. But let's continue to look at the data to be sure.
+
+Next, we'll build a logistic regression model for violator based on these three variables. 
+```{r}
+mod2 = glm(violator ~ multiple.offenses + race + state, train, family = "binomial")
+summary(mod2)
+```
+
+
+When working with only these variables in our training dataset, we can see that our AIC level decreased to 252.42, which is a good indicator for the quality of this model. However, if we look at the significance scores of this dataset, we can see that the state of Louisiana has lost it's significance as reported in the stepwise models. Race and Multiple Offenses still remains very significant factors for parole violation.
+
+Now let's test if my earlier predictions were correct making predictions our mod2 that uses the training data. For a parolee who was incarcerated in Louisiana with multiple offenses and is white race, we can predict they would have a 40.87% chance of violating parole. 
+```{r} 
+#parolee number 1
+newdata = data.frame(state = "Louisiana", multiple.offenses = "Incarcerated for multiple offenses", race = "White")
+predict(mod2, newdata, type="response")
+```
+
+
+Another parolee from Kentucky with no multiple offenses who is of any other race  we can predict they would have a only a 11.53% chance of violating parole. 
+```{r} 
+#parolee number 2
+newdata = data.frame(state = "Kentucky", multiple.offenses = "Otherwise", race = "Otherwise")
+predict(mod2, newdata, type="response")
+```
+
+Without a threshold to tell us exactly where our cut off is for predicting parole violations, we can assume that the first parolee will violate parole, since his/her chances are over 50%. But that's not always an accurate presumption for our data. To get a better idea, we need to create a threshold for our predictions. 
+
+
+To begin, let's apply ROCR to create a ROC curve to help us find our probability threshold.
+```{r}
+predictions = predict(mod2, type="response") #develop predicted probabilities
+head(predictions)
+```
+
+Threshold selection
+```{r}
+#Determining the threshold in graph
+ROCRpred = prediction(predictions, train$violator) 
+
+ROCRperf = performance(ROCRpred, "tpr", "fpr")
+plot(ROCRperf, colorize=TRUE, print.cutoffs.at=seq(0,1,by=0.1), text.adj=c(-0.2,1.7))
+
+#Determine threshold to balance sensitivity and specificity
+#DO NOT modify this code
+opt.cut = function(perf, pred){
+    cut.ind = mapply(FUN=function(x, y, p){
+        d = (x - 0)^2 + (y-1)^2
+        ind = which(d == min(d))
+        c(sensitivity = y[[ind]], specificity = 1-x[[ind]], 
+            cutoff = p[[ind]])
+    }, perf@x.values, perf@y.values, pred@cutoffs)
+}
+print(opt.cut(ROCRperf, ROCRpred))
+```
+
+Examining this data in the threshld for our mod2, we can see that we have a cutoff value of .1161882, but is it really accurate? To know for sure, we'll have to test its accuracy next.
+
+Test thresholds to evaluate accuracy  
+```{r}
+#confusion matrix
+t1 = table(train$violator,predictions > 0.1161882)
+t1
+```
+
+Reviewing our confusion matrix, we correctly classified 357 completed parole without violation and 41 that violated parole. We missed 61 who were incorrecly classified as completing parole without violation and 14 that did not violate parole.
+
+Calculate accuracy  
+```{r}
+(t1[1,1]+t1[2,2])/nrow(train)
+```
+
+Looking at the accuracy of our model at 0.8414376, we can say if we choose to balance sensitivity, and specificity we will have accuracy of 0.84. There are some very negative implications in incorrecly classifying a parolee that could end up putting them back in jail, when they did in fact not violate their parole. 
+
+Knowing this, we can apply trial and error to maximize accuracy 
+```{r}
+t1 = table(train$violator,predictions > 0.5) #let's use 0.5 for our threshold
+t1
+(t1[1,1]+t1[2,2])/nrow(train)
+```
+At a threshold of 0.5, our accuracy increases slightly to 0.8964059, which is roughly 0.9. A threshold of 0.6 delivered the same accuracy.  
+Finally, we want to test this threshold on a naive prediction for the testing set.
+
+```{r}
+#develop predicted probabilities
+newdata = data.frame(test)
+
+predictions = predict(mod2, newdata, type="response") 
+head(predictions)
+```
+
+Threshold selection
+```{r}
+#Determining the threshold in graph
+ROCRpred = prediction(predictions, test$violator) 
+
+ROCRperf = performance(ROCRpred, "tpr", "fpr")
+plot(ROCRperf, colorize=TRUE, print.cutoffs.at=seq(0,1,by=0.1), text.adj=c(-0.2,1.7))
+
+#Determine threshold to balance sensitivity and specificity
+#DO NOT modify this code
+opt.cut = function(perf, pred){
+    cut.ind = mapply(FUN=function(x, y, p){
+        d = (x - 0)^2 + (y-1)^2
+        ind = which(d == min(d))
+        c(sensitivity = y[[ind]], specificity = 1-x[[ind]], 
+            cutoff = p[[ind]])
+    }, perf@x.values, perf@y.values, pred@cutoffs)
+}
+print(opt.cut(ROCRperf, ROCRpred))
+```
+
+This returned us a cutoff value of 0.1153326. Finally, we apply the threshold from our training data to the test data.
+```{r}
+t2 = table(test$violator,predictions > 0.5)
+t2
+(t2[1,1]+t2[2,2])/nrow(test)
+```
+
+For the testing data model, at a threshold of 0.5, we can expect to have accuracy of 0.8960396. Which is pretty accurare. Out of the 202 obervations in the dataset, we correctly classified 174 who did not violate parole and 7 that did violate parole. 
+
+In this dataset, we can see fewer incorrectly classified parolees with 16 incorrecly classified as parole violators and 5 as not parole violators.  
