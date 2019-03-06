@@ -1,0 +1,148 @@
+---
+title: "M6 Assignment1"
+output:
+  word_document: default
+  html_document: default
+editor_options:
+  chunk_output_type: console
+---
+
+
+#Module 6: Assignment 1 -- Clustering 
+##Kellie McLiverty
+
+###Assignment Needs & Data Importation  
+
+Libraries & dataset needed for Assignemnt  
+```{r}
+options(tidyverse.quiet=TRUE)
+library(tidyverse)
+library(cluster) #algorithms for clustering
+library(factoextra) #visualization
+
+```
+
+```{r}
+#first part dataset
+trucks <- read_csv("trucks.csv")
+str(trucks)
+
+```
+
+
+###Examining the relationship between Distance and Speeding
+```{r}
+ggplot(trucks, aes(x=Distance, y = Speeding)) + geom_point() 
+```
+
+Examining the scatterplot, we can see that the data clusters around two points with very few points mingled inbetween. The frist groupd is tightly close together, while the other is more loose. 
+
+```{r}
+trucks2<-select(trucks, -Driver_ID) #exclused Driver_ID from dataset
+
+trucks2 <- as.data.frame(scale(trucks2)) #scales variables and keeps as dataframe
+summary(trucks2)
+```
+
+
+Next, I'll perform k-means clustering with 2 clusters and a set.seed to ensure same clusters.   
+```{r}
+set.seed(1234)
+clusters1 <- kmeans(trucks2, 2)
+
+fviz_cluster(clusters1, trucks2) #Visualizes cluster
+```
+
+After the k-mean clustering, we can see two distinct clusters. Cluster 1 is a wide, loosely fitted cluster, while cluster two is tightly clustered together and is much smaller in size than cluster 1. 
+
+Now, I'll try two other k-means methods to view the clusters. For this section, I changed the set.seed to 123. 
+First Method
+```{r}
+set.seed(123)
+fviz_nbclust(trucks2, kmeans, method = "wss") #minimize within-cluster variation
+```
+
+Looking at the optimal cluster diagram, we can see the "eblow" in the graph between 3 and 4. This would mean to me that this data should actually have around 4 clusters instead of just 2. 
+
+Second method  
+```{r}
+set.seed(123)
+fviz_nbclust(trucks2, kmeans, method = "silhouette") #maximize how well points sit in their clusters
+```
+
+Reviewing this method, we can see that our optimal number of clusters is 4 instead of two. These two diagrams do have some consensus on the ideal optimal number of clusters, which would be 4. With this known, I will repeat the initial k-means cluster with the optimal number of clusters.
+
+```{r}
+set.seed(1234)
+clusters2 <- kmeans(trucks2, 4) #uses the optimal number of clusters
+
+fviz_cluster(clusters2, trucks2) #Visualizes cluster
+```
+
+As we can see from the visualization of these 4 new clusters. The first cluster, colored red, is tightly grouped together with some outlaying points. The second cluster, colored green, is so tightly packed together near its centerpoint it is basically a giant blob. The third cluster, colored teal, is loosely grouped together with no clear discernible center point. The last cluster, colored purple, is a tall, closely grouped cluster with a discernible center point [that also looks roughly shaped like the UK].
+
+
+###Examining Wine Price Dataset
+```{r}
+#second part dataset
+wineprice <- read_csv("wineprice.csv")
+str(wineprice)
+```
+
+To begin, I will be creating a new dataset that removes the Year and FrancePop variables and scales the remaining variables.
+```{r}
+wine2<-select(wineprice, -Year, -FrancePop) #exclused unwanted variables from dataset
+
+wine2 <- as.data.frame(scale(wine2)) #scales variables and keeps as dataframe
+summary(wine2)
+```
+
+Next, I will test to find my optimal number of clusters for the wine data.
+First Method
+```{r}
+set.seed(123)
+fviz_nbclust(wine2, kmeans, method = "wss") #minimize within-cluster variation
+```
+
+For this method, we have 5 to 6 optimal number of clusters. We can see this from the "elbow" the curve between the 5th and 6th datapoint. 
+
+Second method  
+```{r}
+set.seed(123)
+fviz_nbclust(wine2, kmeans, method = "silhouette") #maximize how well points sit in their clusters
+```
+
+This method shows that we have 5 optimal number of clusters. Both of these diagrams do have roughly similar consensus at 5 clusters, as such I will use this number to find my optimal clusters for the data. Below, you can see a cluster plot of the data. Clusters 4 and 5 overlap slighly, while the others are spreadout from each other.
+
+```{r}
+set.seed(1234)
+clusters3 <- kmeans(wine2, 5) #uses the optimal number of clusters
+
+fviz_cluster(clusters3, wine2) #Visualizes cluster
+```
+
+Lastly, I'll use agglomerative & divisive clustering to develop dendograms for the scaled wine data. I'll create the agglomerative dendogram first.
+
+Agglomerative clustering  
+Start by identifying best dissimilarity measure. This is given by highest "agglomerative coefficient".  
+```{r}
+m = c( "average", "single", "complete", "ward")
+names(m) = c( "average", "single", "complete", "ward")
+
+ac = function(x) {
+  agnes(wine2, method = x)$ac
+}
+map_dbl(m, ac)
+```
+
+As ward's method is the highest, I'll use this to develop clusters for the dendogram.
+```{r}
+hc = agnes(wine2, method = "ward") #use ward method
+pltree(hc, cex = 0.6, hang = -1, main = "Agglomerative Dendrogram") 
+```
+
+Divisive clustering  
+```{r}
+hc2 = diana(wine2)
+pltree(hc2, cex = 0.6, hang = -1, main = "Divisive Dendogram")
+```
