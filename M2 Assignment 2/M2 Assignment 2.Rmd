@@ -1,0 +1,180 @@
+---
+editor_options:
+  chunk_output_type: console
+output:
+  word_document: default
+  html_document: default
+---
+#Ban502: Module 2
+##Kellie McLiverty
+
+###Multiple Linear Regression and Special Issues Assignment
+
+Libraries needed for Assignment
+```{r}
+library(tidyverse)
+library(GGally)
+library(MASS)
+library(leaps)
+library(readr)
+```
+
+
+In this assignment, we will be working with an imported dataset called hour.csv. Will import this dataset into a tibble called bike using readr. We will also need to convert a few of these variables to factors, as shown in the code below.
+```{r}
+bike <- read_csv("hour.csv")
+
+#The following lines of code are converting the variables into factors and then recoding/renaming them in the dataset 
+bike = bike %>% mutate(season = as_factor(as.character(season))) %>%
+mutate(season = fct_recode(season,
+"Spring" = "1",
+"Summer" = "2",
+"Fall" = "3",
+"Winter" = "4"))
+
+bike = bike %>% mutate(yr = as_factor(as.character(yr))) %>% mutate(mnth = as_factor(as.character(mnth))) %>% mutate(hr = as_factor(as.character(hr)))
+
+bike = bike %>% mutate(holiday = as_factor(as.character(holiday))) %>%
+mutate(holiday = fct_recode(holiday,
+"NotHoliday" = "0",
+"Holiday" = "1"))
+
+bike = bike %>% mutate(workingday = as_factor(as.character(workingday))) %>%
+mutate(workingday = fct_recode(workingday,
+"NotWorkingDay" = "0",
+"WorkingDay" = "1"))
+
+bike = bike %>% mutate(weathersit = as_factor(as.character(weathersit))) %>%
+mutate(weathersit = fct_recode(weathersit,
+"NoPrecip" = "1",
+"Misty" = "2",
+"LightPrecip" = "3",
+"HeavyPrecip" = "4"))
+
+bike = bike %>% mutate(weekday = as_factor(as.character(weekday))) %>%
+mutate(weekday = fct_recode(weekday,
+"Sunday" = "0",
+"Monday" = "1",
+"Tuesday" = "2",
+"Wednesday" = "3",
+"Thursday" = "4",
+"Friday" = "5",
+"Saturday" = "6"))
+
+#Now let's check that everything converted correctly
+glimpse(bike)
+
+```
+
+Let's take a look at which quantitative variables appears to be best correlated with “count” using ggcorr and ggpairs. To do this with ggpairs, we exclude the qualitative variable columns of the data by only specifying the needed columns. By reviewing the correlation charts, we can see that the Casual variable appears to be the best correlated variable to Count with a value of 0.695, after excluding registered as an option.
+```{r}
+ggcorr(bike, label = "TRUE", label_round = 2) #Correlation diagram excluding categorical variables
+
+ggpairs(bike, columns = c(1, 10:17)) #Select columns of quantitative data
+```
+
+As we use correlation to assess the relationship between a categorical predictor variable and our response variable, Count, we must take a look at how these variables graph to determine if they have a relationship with the response variable. Using these boxplot based analysis, we can find which variables we should use to plot a linear regression model.
+```{r}
+ggplot(bike,aes(x=hr,y=count)) + geom_boxplot() #hr does have an effect on count
+
+ggplot(bike,aes(x=yr,y=count)) + geom_boxplot() 
+
+ggplot(bike,aes(x=mnth,y=count)) + geom_boxplot() 
+
+ggplot(bike,aes(x=season,y=count)) + geom_boxplot() 
+
+ggplot(bike,aes(x=holiday,y=count)) + geom_boxplot()
+
+ggplot(bike,aes(x=weekday,y=count)) + geom_boxplot()
+
+ggplot(bike,aes(x=workingday,y=count)) + geom_boxplot()
+
+ggplot(bike,aes(x=weathersit,y=count)) + geom_boxplot()
+
+```
+
+1.) In our fist boxplot, we can see a clear relationship that hr has with count. The hour changes the count rather significantly, and should be shown in our linear regression model to see how much.  
+
+
+2.) Looking at this plot, we can see that count rose by quite a bit in year 1 as compared to year 0. We could say that the year has an impact on the count, but I'm not convinced it is a significant predictor of count as compared to the other variables.  
+
+
+3.) Much like hr, we can see from this boxplot there is some kind of relationship between mnth and count. It may not be as strong as "hr", but this variable clearly does have some effect on count.  
+
+4.) In this boxplot, we can see anoticeable change in the count between the seasons. While there might be specific reasons behind this, at a surface level there does appear to be a relationship between these variables, and should be explored using a linear regression.  
+
+
+5.) Again, while reviewing this boxplot, there's no real noticeable changes in count between NotHoliday and Holiday, as such I do not see Holiday as much of a predictor of count.  
+
+
+6.) Looking at the data of count based by weekday, we can see a fairly similar degree across each boxplot. Nothing really stands out or changes much between each day, as such I don't see weekday as much of a predictor variable for count.  
+
+
+7.) When reviewing this boxplot, there is not much of a change in the data based on the workingday variable. These boxplots are fairly similar, with just a slight increase on WorkingDays; However, this does not seem to have a significant impact on count. As such, I do not believe this variable should be used for the regression model.  
+
+
+8.) Looking at this boxplot, we can clearly see that weathersit has a pretty big impact on count. As the weather goes from NoPrecip to HeavyPrecip, we can see a decrease in the Count. From this we can infer that these variables have a negative relationship. 
+
+
+###Creating Multiple Regression Models: Forward Stepwise
+To begin with creating our forward stepwise model, we start with creating bothe full and empty models to work with. Then we will review the summary to see which variables were included in the model.  
+
+```{r}
+bike2 = bike %>% dplyr::select(-c(instant, dteday, registered, casual)) #removes these variable from the dataset
+
+ggplot(bike2, aes(x=count)) + geom_histogram() + theme_bw() #a look at our response variable.
+
+ggcorr(bike2, label = "TRUE", label_round = 2) #looking at correlation once again
+
+#preparing for our model by creating a full and empty model
+allmod = lm(count ~., bike2) #use the ~. to include all predictors rather than typing them all in
+summary(allmod)
+
+emptymod = lm(count ~1, bike2) #use ~1 to build an empty model
+summary(emptymod)
+
+
+
+#forward stepwise model
+forwardmod = stepAIC(emptymod, direction = "forward", scope=list(upper=allmod,lower=emptymod),  trace = TRUE) #trace = TRUE shows how the model is built (which variables are added)
+
+summary(forwardmod) 
+
+```
+
+Looking over the summary of our forward stepwise model, we can see that the model includes hr, atemp, yr1, weathersit,Season, mnth exluding mnth1, hum, weekday, windspeed, and temp variables.  
+
+While reviewing th model, it did reflect many of the variables I considered to have common sense relationships with count. We can also see a number of significant relationships between these variables and count. Another thing to note is our AIC is smaller than our RSS, and the smaller the AIC the better.  
+
+We can further judge this model by looking at our Adjusted R-squared value. The Adjusted R-squared is close to 1 at a value of 0.6854; Therefore, we can imply that this is a good model of variables to predict count.  
+
+###Creating Multiple Regression Models: Backward Stepwise  
+```{r}
+backmod = stepAIC(allmod, direction = "backward", trace = TRUE) #trace = TRUE shows how the model is built (which variables are removed)
+
+summary(backmod)
+
+```
+Looking at the summary of the backwards setpwise model, we can see a few similarities between the models. The backward stepwise model included temp, windspeed, atemp, holiday, weekday, mnth, hum, season, weathersit, yr, and hr. It's interesting to note that the WorkingDay variable was kicked from the Backward stepwise model, while it wasn't included in the Forward Stepwise model to start. Workingday is still represented in the data through the weekday variable, as we can imply a typical workday schedule of Monday through Friday. The weekend days, or non-working days, showed to have a significant relationship with count and could be used as a prediction variable.
+
+
+###Modeling Future Years with Forward Stepwise
+```{r}
+bike = bike %>% mutate(yr = as.integer(yr)-1)
+bike3 = bike %>% dplyr::select(-c(instant, dteday, registered, casual)) #new dataset to build models
+
+#preparing for our model by creating a full and empty model
+allmod1 = lm(count ~., bike3) #use the ~. to include all predictors rather than typing them all in
+summary(allmod1)
+
+emptymod1 = lm(count ~1, bike3) #use ~1 to build an empty model
+summary(emptymod1)
+
+#forward stepwise model
+forwardmod1 = stepAIC(emptymod1, direction = "forward", scope=list(upper=allmod1,lower=emptymod1),  trace = TRUE) #trace = TRUE shows how the model is built (which variables are added)
+
+summary(forwardmod1) 
+
+```
+
+Looking over this new stepwise model, we can see that the yr variable no longer shows yr1, but still has a significant relationship to count. Outside of this variable, the two Forward Stepwise models are basically identical in terms of the other variable and our Adjusted R-Squared variables.
