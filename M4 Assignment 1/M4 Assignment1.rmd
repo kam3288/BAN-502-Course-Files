@@ -1,0 +1,198 @@
+---
+title: "M4 Assignment 1"
+output: word_document
+editor_options: 
+  chunk_output_type: console
+---
+#Module 4: Assignment 1 -- Classification Trees
+##Kellie McLiverty
+
+###Assignment Needs & Data Importation  
+
+Libraries needed for Assignemnt  
+```{r}
+library(tidyverse)
+library(rpart)
+library(caret)
+library(rattle)
+library(RColorBrewer)
+
+
+parole <- read_csv("parole.csv")
+```
+
+###Converting data to factors & setting training/testing data
+```{r}
+#converting data into male or female
+parole = parole %>% mutate(male = as_factor(as.character(male))) %>%
+mutate(male = fct_recode(male,
+"Female" = "0",
+"Male" = "1"
+))
+
+#converting race into White or otherwise
+parole = parole %>% mutate(race = as_factor(as.character(race))) %>%
+mutate(race = fct_recode(race,
+"White" = "1",
+"Otherwise" = "2"
+))
+
+#converting states
+parole = parole %>% mutate(state = as_factor(as.character(state))) %>%
+mutate(state = fct_recode(state,
+"Any Other State" = "1",
+"Kentucky" = "2",
+"Louisiana" = "3",
+"Virginia" = "4"
+))
+
+#converting Crimes
+parole = parole %>% mutate(crime = as_factor(as.character(crime))) %>%
+mutate(crime = fct_recode(crime,
+"Any Other Crime" = "1",
+"Larceny" = "2",
+"Drug-related crime" = "3",
+"Driving-related crime" = "4"
+))
+
+#converting Multiple Offenses
+parole = parole %>% mutate(multiple.offenses = as_factor(as.character(multiple.offenses))) %>%
+mutate(multiple.offenses = fct_recode(multiple.offenses,
+"Otherwise" = "0",
+"Incarcerated for multiple offenses" = "1"
+))
+
+#converting parole
+parole = parole %>% mutate(violator = as_factor(as.character(violator))) %>%
+mutate(violator = fct_recode(violator,
+"Completed the parole without violation" = "0",
+"Violated the parole" = "1"
+))
+```
+
+For this assignment, we'll start by splitting the data into training and testing, using a random number seed of 12345.  
+
+```{r}
+set.seed(12345) #sets random number seed for cross validation
+train.rows = createDataPartition(y = parole$violator, p=0.7, list= FALSE)
+train = parole[train.rows,]
+test = parole[-train.rows,]
+```
+
+###Creating Classification Trees
+
+First we will build a classification tree based on parole violator. 
+```{r}
+tree1 = rpart(violator ~., train, method="class")
+fancyRpartPlot(tree1)
+```
+
+Now that we've built the tree, we will use it to classify  a 40 year-old parolee from Louisiana who
+served a 5 year prison sentence. To do this we begin at the top of the tree. Click the Zoom button to get a better look. First we look at the State variable, as this parolee is from Louisiana we go to the right of the first category. The second step shows us Completed Parolee Without Violation and look at the age. As this indidivual is younger than 43 we go to the left to the next variable to look at time served. As their sentence is greater than or equal to 2.5 years, we can classify this individual as "Completed Parole Without Violation."
+
+Next, we'll evaluate tree performance as a function of the complexity parameter (cp)
+```{r}
+printcp(tree1)
+plotcp(tree1)
+```
+
+As we can see from our complexity parameters, using a cp of 0.036364 would be accpetable as it does not appear to overfit the data in the same way that a cp of 0.010000 would. We would then use this value to prune the tree back.
+
+Next, we'll Prune the tree (at minimum cross-validated error of 0.036364) to create a "root"; However, this time we will not plot the tree.   
+```{r}
+tree2 = prune(tree1,cp= tree1$cptable[which.min(tree1$cptable[,"xerror"]),"CP"])
+
+```
+Based on this model, we can see that Completed the parole without violation is our majority class.
+
+
+###Predictions from the Tree
+For this next section, we will be creating predictions on training set and taking a look at it's confusion matrix.   
+```{r}
+treepred = predict(tree2, train, type = "class")
+head(treepred)
+
+confusionMatrix(treepred,train$violator, positive = "Completed the parole without violation") #predictions first then actual
+```
+Accoringing to this matrix we are 88.37% accurate with the unpruned tree. It is also important to note that there is no significant difference in the improvement in accuracy. Our naive accuracy is roughly 88% meaning that everyone in the dataset falls within the majority class.  
+
+
+The next step is to to create predictions on testing set and taking a look at it's confusion matrix.  
+```{r}
+treepred_test = predict(tree2, newdata=test, type = "class")
+head(treepred_test)
+
+confusionMatrix(treepred_test,test$violator, positive = "Completed the parole without violation") #predictions first then actual
+```
+Accoringing to this matrix we are 88.61% accurate with the unpruned tree. It is also important to note that there is no significant difference in the improvement in accuracy. This matrix also reports a sensitivity of 1.0000 which indicates to me that this is model is fairly good at correctly classifying the parolees; However, it is also reporting a specificity of 0.0000, meaninging there are no true negatives in the data. This might not be the best model then, especially since incorrectly classifying this data can have negative consequences.
+
+
+###Import in second dataset & Converting data
+```{r}
+blood <- read_csv("Blood.csv")
+
+
+#converting data
+blood = blood %>% mutate(DonatedMarch = as_factor(as.character(DonatedMarch))) %>%
+mutate(DonatedMarch = fct_recode(DonatedMarch,
+"No" = "0",
+"Yes" = "1"
+))
+
+```
+
+We'll start by splitting the data into training and testing, using a random number seed of 1234.  
+
+```{r}
+set.seed(1234) #sets random number seed for cross validation
+train.rows = createDataPartition(y = blood$DonatedMarch, p=0.7, list= FALSE)
+train2 = blood[train.rows,]
+test2 = blood[-train.rows,]
+```
+
+###Creating Classification Trees
+
+Next, we will build a classification tree based on parole violator. 
+```{r}
+tree3 = rpart(DonatedMarch ~., blood, method="class")
+fancyRpartPlot(tree3)
+```
+
+Next, we'll evaluate tree performance as a function of the complexity parameter (cp)
+```{r}
+printcp(tree3)
+plotcp(tree3)
+```
+
+As we can see from our complexity parameters, using a cp of 0.019663 would be accpetable as it does not appear to overfit the data.
+
+Prune the tree (at minimum cross-validated error)  
+```{r}
+tree4 = prune(tree3,cp= tree3$cptable[which.min(tree3$cptable[,"xerror"]),"CP"])
+```
+
+###Predictions from the Tree
+Predictions on training set  
+```{r}
+bloodpred = predict(tree3, train2, type = "class")
+head(bloodpred)
+```
+
+Caret confusion matrix and accuracy, etc. calcs  
+```{r}
+confusionMatrix(bloodpred,train2$DonatedMarch, positive = "Yes") #predictions first then actual
+```
+Accoringing to this matrix we are 83% accurate with the unpruned tree. It is also important to note that there is is a significant difference in the improvement in accuracy [P-Value [Acc > NIR] : 0.0001954]. We also have a naive accuracy of 76%, predicting that most donators will fall into the majority class.   
+
+
+Predictions on testing set  
+```{r}
+bloodpred_test = predict(tree3, newdata=test2, type = "class")
+head(bloodpred_test)
+```
+
+Caret confusion matrix and accuracy, etc. calcs  
+```{r}
+confusionMatrix(bloodpred_test,test2$DonatedMarch, positive = "Yes") #predictions first then actual
+```
+Accoringing to this matrix we are 79% accurate with the unpruned tree. It is also important to note that there is no significant difference in the improvement in accuracy [P-Value [Acc > NIR] : 0.1945593]. Our naive accuracy is 76%, predicting that most donators will fall into the majority class. This model has a sensitivity of 0.32075 so there are more false postives than true positives, but high specificity of 0.93567, showing there are fewer false negatives than true negatives. This might not be the best quality model to use to predict who will donate blood.   
