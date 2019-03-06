@@ -1,0 +1,182 @@
+---
+chunk_output_type: console
+output: word_document
+---
+#Module 5: Assignment 1 -- Classification Trees
+##Kellie McLiverty
+
+###Assignment Needs & Data Importation  
+
+Libraries needed for Assignemnt  
+```{r}
+library(tidyverse)
+library(caret)
+library(nnet)
+
+
+
+parole <- read_csv("parole.csv")
+```
+
+###Converting data to factors & setting training/testing data
+```{r}
+#converting data into male or female
+parole = parole %>% mutate(male = as_factor(as.character(male))) %>%
+mutate(male = fct_recode(male,
+"Female" = "0",
+"Male" = "1"
+))
+
+#converting race into White or otherwise
+parole = parole %>% mutate(race = as_factor(as.character(race))) %>%
+mutate(race = fct_recode(race,
+"White" = "1",
+"Otherwise" = "2"
+))
+
+#converting states
+parole = parole %>% mutate(state = as_factor(as.character(state))) %>%
+mutate(state = fct_recode(state,
+"Any Other State" = "1",
+"Kentucky" = "2",
+"Louisiana" = "3",
+"Virginia" = "4"
+))
+
+#converting Crimes
+parole = parole %>% mutate(crime = as_factor(as.character(crime))) %>%
+mutate(crime = fct_recode(crime,
+"Any Other Crime" = "1",
+"Larceny" = "2",
+"Drug-related crime" = "3",
+"Driving-related crime" = "4"
+))
+
+#converting Multiple Offenses
+parole = parole %>% mutate(multiple.offenses = as_factor(as.character(multiple.offenses))) %>%
+mutate(multiple.offenses = fct_recode(multiple.offenses,
+"Otherwise" = "0",
+"Incarcerated for multiple offenses" = "1"
+))
+
+#converting parole
+parole = parole %>% mutate(violator = as_factor(as.character(violator))) %>%
+mutate(violator = fct_recode(violator,
+"Completed the parole without violation" = "0",
+"Violated the parole" = "1"
+))
+```
+
+For this assignment, we'll start by splitting the data into training and testing, using a random number seed of 12345.  
+
+```{r}
+set.seed(12345) #sets random number seed for cross validation
+train.rows = createDataPartition(y = parole$violator, p=0.7, list= FALSE)
+train = parole[train.rows,]
+test = parole[-train.rows,]
+```
+
+Now we will be creating a neural network to predict parole violation. 
+
+```{r}
+start_time = Sys.time() #for timing
+fitControl = trainControl(method = "cv", 
+                           number = 10)
+
+nnetGrid <-  expand.grid(size = 12, decay = 0.1)
+
+set.seed(1234)
+nnetBasic = train(violator ~ ., 
+                 parole,
+                 method = "nnet",
+                 tuneGrid = nnetGrid,
+                 trControl = fitControl,
+                 verbose = FALSE,
+                 trace = FALSE)
+
+end_time = Sys.time()
+end_time-start_time
+
+nnetBasic
+```
+
+
+
+This model returned final size of 12 and decay of 0.1 with an accuracy of 88%. We will next take this model and make predictions on who will violate parole, and take a look at the quality of this model.
+```{r}
+#Predictions 
+predNetBasic = predict(nnetBasic, train)
+
+
+#Confusion matrix
+confusionMatrix(predNetBasic, train$violator, positive = "Completed the parole without violation")
+```
+
+As we can see from the confusion matrix, this model reports back an accuracy of roughly 93% with a P-Value that is less than 0.05. This model has high sensitivity of 0.9785 and moderate specificity of 0.5636, which does indicate there is a bit of quality lacking in this model. The tradeoff would be to change the threshold to see if that would improve the model's quality, but we will leave it like this for now.
+
+Considering that our naive accuracy and the accuracy of our model were about the same, we may see some overfitting of the data that we will look at later with the predictions of the testing data.
+
+Now, let's take a look at another neural network with different parameters to see what the models return. Give this a moment to run.
+```{r}
+start_time = Sys.time() #for timing
+fitControl = trainControl(method = "cv", 
+                           number = 10)
+
+nnetGrid =  expand.grid(size = seq(from = 2, to = 12, by = 1), #rule of thumb --> between # of input and # of output layers
+                        decay = seq(from = 0.1, to = 0.5, by = 0.1))
+set.seed(1234)
+nnetFit = train(violator ~ ., 
+                 parole,
+                 method = "nnet",
+                 trControl = fitControl,
+                 tuneGrid = nnetGrid,
+                 verbose = FALSE,
+                 trace = FALSE)
+
+end_time = Sys.time()
+end_time-start_time
+
+nnetFit
+
+plot(nnetFit)
+```
+
+This new model returned with a final size of 8 and decay of 0.2. We now want to see how this model will make predictions on the training and testing data.
+
+
+```{r}
+predNet = predict(nnetFit, train)
+
+confusionMatrix(predNet, train$violator, positive = "Completed the parole without violation")
+```
+Looking at the confusion matrix for the nnetfit model, we can see we have a slight decrease in accuracy between the two models, in which nnetfit has an accuracy of 92%. We also see a slight decrease in the sensitivity 0.9809 and specificty 0.4545 of the model.  
+
+Predictions on testing set nnetBasic
+```{r}
+predTest1 = predict(nnetBasic, newdata = test)
+head(predTest1)
+
+confusionMatrix(predTest1,test$violator, positive = "Completed the parole without violation") #predictions first then actual
+```
+From this confusion matrix, we can see an accuracy of 92% of this model with a Sensitivity of 0.9944 and Specificity of 0.3043. It is interesting to note that the p value for the testing data in this model is above 0.05 and we have a naive accuracy of 89%. The accuracy of the testing data is slightly lower than the training data model. 
+
+
+
+Predictions on testing set For Model nnetFit
+```{r}
+predNettest = predict(nnetFit, newdata = test)
+head(predNettest)
+
+confusionMatrix(predNettest,test$violator, positive = "Completed the parole without violation") #predictions first then actual
+```
+
+The testing data for this model returned an Accuracy of 91%, Sensitivity of 0.9832 and Specificity of 0.3043. This model also shows the naive model being around 88% accurate and a p value of over 0.05. The testing data of this model shows a 2% decrease in accuracy of the model. 
+
+
+Looking over these two models, the nnetFit model appears to be the better model to avoid overfitting the data. Without adjusting the threshold for the nnetBasic dataset, I feel that this model may be closer to overfitting the data, especially with such a high sensitivity score. 
+
+
+ 
+
+
+
